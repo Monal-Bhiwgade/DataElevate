@@ -1,0 +1,14 @@
+pandas
+seaborn
+numpy
+matplotlib
+kagglehub
+gdown
+mysql
+google-api-python-client
+google-auth-httplib2
+google-auth-oauthlib
+openpyxl
+SQLAlchemy
+psycopg2
+python-dotenv
