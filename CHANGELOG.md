@@ -10,6 +10,7 @@ Better discoverability on PyPI and GitHub. No code changes.
   Links now work on the PyPI page.
 - Releases now publish to PyPI automatically when a version bump is merged into `main`.
 - CI also tests Python 3.13.
+- Contributor guide, code of conduct, and issue and pull request templates.
 
 ## 1.2.0
 

@@ -365,7 +365,11 @@ Yes. It's tested on Windows, macOS and Linux, and SQL Server works without an OD
 
 ## Contributing
 
-Issues and pull requests are welcome. To run the tests:
+DataElevate is open source (MIT) and contributions are very welcome: new data sources,
+performance improvements, bug fixes and docs. Start with the
+[contributing guide](https://github.com/Monal-Bhiwgade/DataElevate/blob/main/CONTRIBUTING.md),
+which covers setup, how the code is organised, how to add a data source, and a list of
+ideas to work on. To run the tests:
 
 ```bash
 pip install -e ".[dev]"
