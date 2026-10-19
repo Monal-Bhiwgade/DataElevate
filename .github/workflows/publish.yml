@@ -1,16 +1,49 @@
-# Publishes to PyPI when you publish a GitHub Release.
+# Publishes DataElevate to PyPI automatically.
+#
+# When: every push to main (e.g. a merged pull request). It only publishes when the
+# version in pyproject.toml is not on PyPI yet, so merges that don't bump the version
+# do nothing. It can also be run by hand from the Actions tab, and still runs when a
+# GitHub Release is published manually.
+#
+# After a successful upload it creates the git tag v<version> and a GitHub Release
+# with that version's CHANGELOG section.
+#
 # Uses PyPI Trusted Publishing: no PyPI password or API token is stored anywhere.
-# One-time setup on pypi.org: DataElevate -> Settings -> Publishing -> add a GitHub
-# publisher with owner "Monal-Bhiwgade", repo "DataElevate", workflow "publish.yml",
-# environment "pypi".
+# One-time setup on pypi.org: DataElevate -> Manage -> Publishing -> GitHub publisher
+# with owner "Monal-Bhiwgade", repo "DataElevate", workflow "publish.yml",
+# environment "pypi". (Keep this file's name: PyPI trusts it by name.)
 name: publish
 
 on:
+  push:
+    branches: [main]
   release:
     types: [published]
+  workflow_dispatch:
+
+concurrency:
+  group: publish
+  cancel-in-progress: false
 
 jobs:
+  check:
+    runs-on: ubuntu-latest
+    permissions:
+      contents: read
+    outputs:
+      version: ${{ steps.check.outputs.version }}
+      publish: ${{ steps.check.outputs.publish }}
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - id: check
+        run: python scripts/release_check.py
+
   build:
+    needs: check
+    if: needs.check.outputs.publish == 'true'
     runs-on: ubuntu-latest
     permissions:
       contents: read
@@ -30,7 +63,7 @@ jobs:
           path: dist/
 
   publish:
-    needs: build
+    needs: [check, build]
     runs-on: ubuntu-latest
     environment: pypi
     permissions:
@@ -41,3 +74,32 @@ jobs:
           name: dist
           path: dist/
       - uses: pypa/gh-action-pypi-publish@release/v1
+
+  github-release:
+    needs: [check, publish]
+    if: github.event_name != 'release'
+    runs-on: ubuntu-latest
+    permissions:
+      contents: write
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/download-artifact@v4
+        with:
+          name: dist
+          path: dist/
+      - name: Create tag and GitHub Release
+        env:
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+          VERSION: ${{ needs.check.outputs.version }}
+        run: |
+          if gh release view "v$VERSION" >/dev/null 2>&1; then
+            echo "Release v$VERSION already exists."
+            exit 0
+          fi
+          awk -v v="$VERSION" '
+            $0 ~ "^## " v "([^0-9.]|$)" {f=1; next}
+            /^## / {f=0}
+            f' CHANGELOG.md > notes.md
+          printf '\n```bash\npip install --upgrade DataElevate==%s\n```\n' "$VERSION" >> notes.md
+          gh release create "v$VERSION" dist/* --target "$GITHUB_SHA" \
+            --title "DataElevate $VERSION" --notes-file notes.md
