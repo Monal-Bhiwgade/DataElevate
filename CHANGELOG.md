@@ -5,6 +5,13 @@
 More sources, focused on data that is painful to fetch by hand.
 
 ### Added
+- **Smart loader:** `Load_data.load()` / `smart_load()` takes one source, a list, a
+  `{name: source}` dict or per-source spec dicts, detects each source (local file/folder/
+  archive, https, cloud path/glob, lake table, Kaggle, Drive, Hugging Face, database URL,
+  DataFrame), loads them in parallel and combines them: stacked with a `source` column when
+  columns match, otherwise a dict (`combine=`). Folders of many files are combined too.
+  Also `normalize_columns=`, `errors="skip"`, `df.attrs["sources"]`, and
+  `Load_data.detect_source()`. Database passwords are masked in the source column.
 - **Data lakes:** `Load_data.from_lake()` reads Hive-partitioned Parquet/CSV/JSON folders
   and Delta Lake tables on S3, GCS, Azure, other fsspec storage or local disk, with
   `columns=`, `filters=` and `limit=` pushed down so only the needed files and columns

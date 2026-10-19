@@ -10,6 +10,9 @@ Linux, with nothing to install outside `pip`.
 ```python
 from DataElevate import Load_data
 
+# One call, any mix of sources: detected, loaded and stacked for you
+df = Load_data.load(["data/jan.csv", "s3://lake/feb.parquet", "kaggle:owner/march-sales"])
+
 df = Load_data.from_url("https://example.com/data/train.csv")
 df = Load_data.from_lake("s3://company-lake/sales", columns=["user_id", "amount"],
                          filters=[("year", "=", 2025)])
@@ -51,6 +54,61 @@ Requires Python 3.9+. Every dependency ships ready-made wheels for Windows, macO
 ```python
 from DataElevate import Load_data
 ```
+
+### Smart loader: any source, or many at once
+
+Give `Load_data.load()` (also called `smart_load()`) one source or a list, and it works out
+what each one is, loads it with the right loader, and combines the results.
+
+```python
+# A folder of monthly exports -> one DataFrame
+df = Load_data.load("exports/")
+
+# Different sources with the same columns -> stacked, with a "source" column
+df = Load_data.load({
+    "2023": "data/sales_2023.csv",
+    "2024": "https://example.com/sales_2024.parquet",
+    "2025": "s3://company-lake/sales_2025/",
+    "crm":  {"source": "postgresql://analyst@db/shop", "table": "sales"},
+    "manual": existing_dataframe,
+})
+
+# Per-source options, plus options for every source
+df = Load_data.load([
+    {"source": "s3://lake/events", "filters": [("year", "=", 2025)], "name": "events"},
+    {"source": "hf:stanfordnlp/imdb", "split": "train[:1000]", "name": "imdb"},
+], storage_options={"anon": True})
+```
+
+It recognises:
+
+| Source | Example | Loaded as |
+|---|---|---|
+| Local file or archive | `"data/train.csv"`, `"exports.zip"` | File(s) |
+| Local folder | `"exports/"` | All data files combined; a partitioned/Delta folder is read as a lake; an image folder is indexed |
+| Web link | `"https://.../train.csv"` | Downloaded (GitHub/Dropbox links fixed) |
+| Cloud file, folder or glob | `"s3://b/train.parquet"`, `"gs://b/*.csv"` | Downloaded |
+| Cloud table folder | `"s3://lake/sales"` | Data-lake table (Parquet/Delta), with filters |
+| Kaggle | `"kaggle:owner/name"` or a kaggle.com link | Kaggle dataset |
+| Google Drive | a drive.google.com link | Drive file/folder (sign-in if private) |
+| Hugging Face | `"hf:owner/name"` or a huggingface.co link | Dataset split |
+| Database | `{"source": "postgresql://...", "table": "orders"}` | Table or `query` |
+| DataFrame | `df` | As is |
+
+Check what it will do without loading: `Load_data.detect_source("s3://lake/sales")` → `"lake"`.
+
+Options:
+
+- `combine="auto"` (default) stacks when every part has the same columns, otherwise returns
+  a dict of DataFrames. `"concat"` always stacks (missing columns become empty);
+  `"dict"` always returns `{name: DataFrame}`.
+- `normalize_columns=True` turns `"Customer ID"` and `"customer_id"` into the same column.
+- `source_column="source"` names the column that records where each row came from
+  (`None` to leave it out).
+- `errors="skip"` loads what it can; failures are listed in `df.attrs["skipped"]`.
+- Sources load in parallel (`max_workers=4`), and the output keeps your input order.
+- `df.attrs["sources"]` lists every part and how many rows it contributed.
+- Database passwords are never written into the `source` column.
 
 ### Any link or cloud path
 

@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pandas as pd
 
-from . import _hf, _images, _kaggle, _lake, _loaders, _remote
+from . import _hf, _images, _kaggle, _lake, _loaders, _remote, _smart
 from ._deps import require
 from .download import Download_data
 from .errors import InvalidInput, MultipleFilesError
@@ -152,6 +152,54 @@ class Load_data:
         """Show a lake table's format, columns, partition columns and file count
         without reading any data. Use it to decide columns= and filters=."""
         return _lake.describe(url, format, storage_options, version)
+
+    @staticmethod
+    def smart_load(sources, combine="auto", source_column="source", normalize_columns=False,
+                   errors="raise", max_workers=4, **options):
+        """Load one or many sources of any kind and combine them into one DataFrame.
+
+        Each source is detected automatically:
+
+        - local file or folder (a folder of many CSV/Parquet/... files is combined;
+          a partitioned or Delta folder is read as a lake; an image folder is indexed)
+        - ``https://`` link, ``s3://`` / ``gs://`` / ``az://`` / ``sftp://`` path or glob
+        - data-lake table (cloud folder of Parquet, or Delta)
+        - Google Drive or Kaggle link, ``kaggle:owner/name``
+        - Hugging Face URL or ``hf:owner/name``
+        - database URL such as ``postgresql://...`` (give ``table`` or ``query``)
+        - a pandas DataFrame you already have
+
+        Args:
+            sources: One source, a list of sources, a dict ``{name: source}``, or spec
+                dicts like ``{"source": "s3://lake/sales", "filters": [...],
+                "name": "sales"}`` to give one source its own options.
+            combine: "auto" (default) stacks the data when every part has the same
+                columns, otherwise returns a dict of DataFrames. "concat" always stacks
+                (missing columns become NaN). "dict" always returns ``{name: DataFrame}``.
+            source_column: Column recording where each row came from (None to skip).
+                Only added when more than one part is combined.
+            normalize_columns: Lower-case and snake_case column names first, so
+                "Customer ID" and "customer_id" line up across sources.
+            errors: "raise" (default) or "skip" to load what works; skipped sources are
+                listed in ``df.attrs["skipped"]``.
+            max_workers: How many sources to load in parallel.
+            **options: Applied to every source, e.g. ``destination=``,
+                ``storage_options=``, ``split=``, or pandas options such as ``nrows=``.
+
+        Returns:
+            A DataFrame (``df.attrs["sources"]`` lists each part and its row count),
+            or a dict of DataFrames.
+        """
+        return _smart.smart_load(sources, combine, source_column, normalize_columns,
+                                 errors, max_workers, **options)
+
+    load = smart_load
+
+    @staticmethod
+    def detect_source(source):
+        """Say how smart_load would treat a source ("file", "folder", "url", "lake",
+        "kaggle", "drive", "huggingface", "database" or "dataframe"), without loading it."""
+        return _smart.detect(source)
 
     class Database:
         """Load a table (or the result of your own SQL query) from a database.
