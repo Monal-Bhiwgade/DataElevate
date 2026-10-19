@@ -1,13 +1,42 @@
-"""Download datasets from Kaggle and Google Drive."""
+"""Download datasets from any link, cloud storage, Kaggle, Google Drive and Hugging Face."""
 
 from pathlib import Path
 
-from . import _gdrive, _kaggle
+from . import _gdrive, _hf, _kaggle, _remote
 from .errors import CredentialsError
 
 
 class Download_data:
-    """Entry point for downloads: ``Download_data.Kaggle`` and ``Download_data.GoogleDrive``."""
+    """Entry point for downloads: ``Download_data.from_url``, ``.Kaggle``,
+    ``.GoogleDrive`` and ``.HuggingFace``."""
+
+    @staticmethod
+    def from_url(url, destination=None, extract=True, storage_options=None, overwrite=False,
+                 progress=True, credentials=None):
+        """Download from any link: https (GitHub/Dropbox links fixed automatically),
+        Google Drive, Kaggle, or remote storage (s3://, gs://, az://, sftp://, ftp://,
+        github://, hf://). Folders and globs (``s3://bucket/data/*.parquet``) work too.
+
+        Archives are extracted unless ``extract=False``. Existing files in
+        ``destination`` (default ``./Data``) are reused unless ``overwrite=True``.
+
+        Returns:
+            List of local paths (files or folders), as strings.
+        """
+        return _remote.download(url, destination, extract, storage_options, overwrite,
+                                progress, credentials)
+
+    from_cloud = from_url
+
+    class HuggingFace:
+
+        @staticmethod
+        def download(name, destination=None, revision=None, token=None):
+            """Download a Hugging Face dataset repository's files (``owner/name`` or URL).
+
+            Returns the local folder. Needs ``pip install "DataElevate[huggingface]"``.
+            """
+            return _hf.download(name, destination, revision, token)
 
     class Kaggle:
 

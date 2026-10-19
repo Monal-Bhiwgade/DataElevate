@@ -47,7 +47,7 @@ def test_import_does_not_load_optional_dependencies():
 
 
 def test_public_api_and_version():
-    assert DataElevate.__version__ == "1.1.0"
+    assert DataElevate.__version__ == "1.2.0"
     for name in ("Download_data", "Load_data", "Extractor", "DataElevateError"):
         assert hasattr(DataElevate, name)
     from DataElevate.EDAerror import InvalidInput  # old module path still works

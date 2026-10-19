@@ -1,10 +1,12 @@
-"""Load data into pandas DataFrames from local files, Kaggle, Google Drive and databases."""
+"""Load data into pandas DataFrames from files, URLs, cloud storage, Kaggle, Google Drive,
+Hugging Face, image folders and databases."""
 
+import os
 from pathlib import Path
 
 import pandas as pd
 
-from . import _kaggle, _loaders
+from . import _hf, _images, _kaggle, _lake, _loaders, _remote
 from ._deps import require
 from .download import Download_data
 from .errors import InvalidInput, MultipleFilesError
@@ -20,7 +22,9 @@ def _pick_file(source, paths, file):
             raise InvalidInput(f"'{file}' not found in '{source}'. Loadable files: {names}")
         return wanted[0]
     if not candidates:
-        raise InvalidInput(f"'{source}' has no loadable files (csv, txt, tsv, Excel).")
+        raise InvalidInput(
+            f"'{source}' has no loadable data files (csv, tsv, txt, Excel, Parquet, JSON, "
+            "JSONL, Feather). For image datasets use Load_data.from_images().")
     if len(candidates) > 1:
         raise MultipleFilesError(source, [p.name for p in candidates])
     return candidates[0]
@@ -31,7 +35,8 @@ class Load_data:
 
     @staticmethod
     def from_local(path, **kwargs):
-        """Load a CSV, TSV/TXT (delimiter auto-detected) or Excel file.
+        """Load a CSV, TSV/TXT (delimiter auto-detected), Excel, Parquet, JSON, JSONL or
+        Feather file. Compressed text formats such as ``train.csv.gz`` also work.
 
         Extra keyword arguments are passed to the pandas reader.
         """
@@ -61,13 +66,100 @@ class Load_data:
                 url, destination, credentials=credentials)]
         return _loaders.load(_pick_file(url, paths, file), **kwargs)
 
+    @staticmethod
+    def from_url(url, file=None, destination=None, storage_options=None, credentials=None,
+                 overwrite=False, **kwargs):
+        """Download from any link and load it.
+
+        Works with ``https://`` links (including GitHub and Dropbox share links),
+        Google Drive and Kaggle links, and cloud/remote storage: ``s3://``, ``gs://``,
+        ``az://``, ``sftp://``, ``ftp://``, ``github://``, ``hf://``. Archives are
+        extracted automatically. Files are cached in ``./Data`` and reused next time
+        (``overwrite=True`` to re-download).
+
+        ``storage_options`` passes your own cloud settings/credentials, e.g.
+        ``{"anon": True}`` for a public S3 bucket.
+        """
+        paths = _remote.download(url, destination, True, storage_options, overwrite,
+                                 credentials=credentials)
+        return _loaders.load(_pick_file(url, paths, file), **kwargs)
+
+    from_cloud = from_url
+
+    @staticmethod
+    def from_huggingface(name, split="train", config=None, revision=None, token=None,
+                         **kwargs):
+        """Load a Hugging Face Hub dataset split into a DataFrame.
+
+        ``name`` is ``"owner/dataset"`` or a huggingface.co/datasets URL. Use slices such
+        as ``split="train[:1000]"`` for a quick sample, and ``split=None`` to get a dict of
+        all splits. Needs ``pip install "DataElevate[huggingface]"``.
+        """
+        return _hf.load(name, split, config, revision, token, **kwargs)
+
+    @staticmethod
+    def from_images(source, extensions=None, destination=None, storage_options=None,
+                    credentials=None):
+        """Index an image-classification dataset into a DataFrame of path, label, split.
+
+        ``source`` can be a local folder, a local archive, or any link ``from_url``
+        accepts (Kaggle, Google Drive, https, s3:// ...). Labels come from class folder
+        names (``cat/001.jpg``), and splits from ``train/``, ``val/``, ``test/`` folders.
+        """
+        source_path = Path(str(source))
+        if _remote.protocol(str(source)) is None:
+            if source_path.is_dir():
+                root = source_path
+            elif source_path.is_file() and _remote._is_unpack_target(source_path):
+                root = _remote._unpack(source_path, overwrite=False)
+            else:
+                raise InvalidInput(f"'{source}' is not a folder, an archive, or a URL.")
+        else:
+            paths = [Path(p) for p in _remote.download(
+                source, destination, True, storage_options, credentials=credentials)]
+            paths = [_remote._unpack(p, False) if _remote._is_unpack_target(p) else p
+                     for p in paths]
+            if len(paths) == 1 and paths[0].is_dir():
+                root = paths[0]
+            else:
+                root = Path(os.path.commonpath([str(p if p.is_dir() else p.parent)
+                                                for p in paths]))
+        return _images.index_images(root, extensions)
+
+    @staticmethod
+    def from_lake(url, columns=None, filters=None, limit=None, format="auto",
+                  storage_options=None, version=None):
+        """Read a table from a data lake, fetching only what you ask for.
+
+        ``url`` is a folder of Parquet/CSV/JSON files (Hive partitions like
+        ``year=2025/`` become columns) or a Delta Lake table, on ``s3://``, ``gs://``,
+        ``az://``/``abfs://``, other fsspec storage, or a local path. Delta is detected
+        automatically.
+
+        Args:
+            columns: Only these columns are read, e.g. ``["user_id", "amount"]``.
+            filters: Rows to keep, pushed down to skip whole files/partitions, e.g.
+                ``[("year", "=", 2025), ("country", "in", ["IN", "US"])]``.
+            limit: Stop after this many rows (quick samples of huge tables).
+            format: "auto" (default), "parquet", "delta", "csv" or "json".
+            storage_options: Your own storage credentials/settings.
+            version: Delta only: a version number or timestamp (time travel).
+        """
+        return _lake.load(url, format, columns, filters, limit, storage_options, version)
+
+    @staticmethod
+    def describe_lake(url, format="auto", storage_options=None, version=None):
+        """Show a lake table's format, columns, partition columns and file count
+        without reading any data. Use it to decide columns= and filters=."""
+        return _lake.describe(url, format, storage_options, version)
+
     class Database:
         """Load a table (or the result of your own SQL query) from a database.
 
         Table names are looked up through SQLAlchemy and quoted safely, so a table
         name can never inject SQL. Passwords with special characters are escaped.
         Install drivers with ``pip install "DataElevate[db]"``
-        (SQL Server / Azure SQL: ``"DataElevate[mssql]"``).
+        (SQL Server / Azure SQL: ``"DataElevate[mssql]"``, no ODBC install needed).
         """
 
         @staticmethod
@@ -133,16 +225,25 @@ class Load_data:
         @staticmethod
         def from_mssql(db_name, table_name=None, username=None, password=None,
                        host="localhost", port=1433, *, query=None, params=None,
-                       schema=None, user=None, driver="ODBC Driver 18 for SQL Server"):
-            engine = Load_data.Database._engine(
-                "mssql+pyodbc", "pyodbc", "pyodbc", "mssql",
-                db_name, username or user, password, host, port, query={"driver": driver})
+                       schema=None, user=None, driver=None):
+            """SQL Server. Uses the pymssql driver by default (wheels bundle everything), so no ODBC
+            install is needed. Pass ``driver="ODBC Driver 18 for SQL Server"`` to use
+            pyodbc with an installed ODBC driver instead."""
+            if driver:
+                engine = Load_data.Database._engine(
+                    "mssql+pyodbc", "pyodbc", "pyodbc", "mssql-odbc",
+                    db_name, username or user, password, host, port, query={"driver": driver})
+            else:
+                engine = Load_data.Database._engine(
+                    "mssql+pymssql", "pymssql", "pymssql", "mssql",
+                    db_name, username or user, password, host, port)
             return Load_data.Database._read(engine, table_name, query, params, schema)
 
         @staticmethod
         def from_azure_sql(db_name, table_name=None, username=None, password=None,
                            host="localhost", port=1433, *, query=None, params=None,
-                           schema=None, user=None, driver="ODBC Driver 18 for SQL Server"):
+                           schema=None, user=None, driver=None):
+            """Azure SQL Database (same options as from_mssql)."""
             return Load_data.Database.from_mssql(
                 db_name, table_name, username or user, password, host, port,
                 query=query, params=params, schema=schema, driver=driver)

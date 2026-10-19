@@ -1,5 +1,33 @@
 # Changelog
 
+## 1.2.0
+
+More sources, focused on data that is painful to fetch by hand.
+
+### Added
+- **Data lakes:** `Load_data.from_lake()` reads Hive-partitioned Parquet/CSV/JSON folders
+  and Delta Lake tables on S3, GCS, Azure, other fsspec storage or local disk, with
+  `columns=`, `filters=` and `limit=` pushed down so only the needed files and columns
+  are read. Delta tables are auto-detected and support time travel (`version=`).
+  `Load_data.describe_lake()` shows format, columns, partitions and file count.
+- **Any link:** `Load_data.from_url()` / `Download_data.from_url()` for `https://`,
+  GitHub and Dropbox share links (rewritten automatically), Google Drive and Kaggle links,
+  and `s3://`, `gs://`, `az://`/`abfs://`, `sftp://`, `ftp://`, `github://`, `hf://`.
+  Folders and globs work; archives are extracted; downloads are cached.
+  `from_cloud()` is an alias.
+- **Hugging Face:** `Load_data.from_huggingface()` and `Download_data.HuggingFace.download()`.
+- **Image datasets:** `Load_data.from_images()` indexes class/split folders (local, archive
+  or any link) into a `path`, `label`, `split` DataFrame.
+- **Formats:** Parquet, Feather/Arrow, JSON (nested JSON flattened), JSONL, and compressed
+  text (`.csv.gz`, `.csv.zip`, `.jsonl.gz`, ...).
+- Extras: `s3`, `gcs`, `azure`, `sftp`, `cloud`, `delta`, `lake`, `huggingface`,
+  `mssql-odbc`. A missing extra raises an error with the exact `pip install` command.
+
+### Changed
+- SQL Server / Azure SQL use `pymssql` by default, so no Microsoft ODBC driver install is
+  needed. Pass `driver="ODBC Driver 18 for SQL Server"` to use pyodbc (`[mssql-odbc]`).
+- Core dependencies now include `pyarrow`, `fsspec` and `requests` (wheels on every OS).
+
 ## 1.1.0
 
 A foundation release: install works everywhere, every documented feature works, and the

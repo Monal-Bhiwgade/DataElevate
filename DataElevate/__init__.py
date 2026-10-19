@@ -1,5 +1,5 @@
-"""DataElevate: get training data from Kaggle, Google Drive, archives and databases
-into pandas with a few lines of code."""
+"""DataElevate: get training data from any link, cloud storage, data lakes, Kaggle,
+Google Drive, Hugging Face, image folders and databases into pandas with a few lines of code."""
 
 from .download import Download_data
 from .errors import (
@@ -27,5 +27,5 @@ __all__ = [
     "CredentialsError",
 ]
 
-__version__ = "1.1.0"
+__version__ = "1.2.0"
 __author__ = "Monal Bhiwgade"

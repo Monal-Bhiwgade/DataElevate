@@ -44,7 +44,7 @@ def test_kwargs_passed_to_pandas(tmp_path):
 
 
 def test_unsupported_raises(tmp_path):
-    p = tmp_path / "data.json"
+    p = tmp_path / "data.xyz"
     p.write_text("{}")
     with pytest.raises(Invalid_File_Support):
         Load_data.from_local(p)
