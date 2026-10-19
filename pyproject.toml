@@ -1,0 +1,78 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "DataElevate"
+version = "1.2.0"
+description = "Get training data from any link, cloud storage, data lakes, Kaggle, Google Drive, Hugging Face and databases into pandas with a few lines of code."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Monal Bhiwgade" }]
+keywords = ["dataset", "data loading", "data lake", "delta lake", "parquet", "s3", "kaggle", "google drive", "hugging face", "machine learning", "pandas"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# Core install: local files (incl. Parquet/Feather), any https link, local data-lake
+# folders, Kaggle and Google Drive (public links and built-in sign-in). Every dependency ships wheels for all OSes.
+dependencies = [
+    "pandas>=1.5",
+    "pyarrow>=12",
+    "openpyxl>=3.1",
+    "requests>=2.28",
+    "fsspec>=2023.1",
+    "tqdm>=4.60",
+    "gdown>=5.1",
+    "kagglehub>=0.3",
+    "google-api-python-client>=2.100",
+    "google-auth>=2.20",
+    "google-auth-oauthlib>=1.0",
+]
+
+[project.optional-dependencies]
+# Kept for compatibility: Google sign-in is now part of the core install
+gdrive = []
+# PostgreSQL, MySQL/MariaDB, Oracle, SQLite
+db = [
+    "SQLAlchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "PyMySQL>=1.1",
+    "oracledb>=2.0",
+]
+# SQL Server / Azure SQL, no ODBC install needed
+mssql = ["SQLAlchemy>=2.0", "pymssql>=2.3"]
+# SQL Server through an installed Microsoft ODBC driver (opt-in)
+mssql-odbc = ["SQLAlchemy>=2.0", "pyodbc>=5.0"]
+# Cloud and remote storage (for from_url / from_cloud / from_lake)
+s3 = ["s3fs>=2023.1"]
+gcs = ["gcsfs>=2023.1"]
+azure = ["adlfs>=2023.1"]
+sftp = ["paramiko>=3.0"]
+cloud = ["DataElevate[s3,gcs,azure,sftp]"]
+# Delta Lake tables (no Spark or Java needed)
+delta = ["deltalake>=0.18"]
+# Hugging Face Hub datasets
+huggingface = ["datasets>=2.18", "huggingface_hub>=0.20"]
+lake = ["DataElevate[cloud,delta]"]
+all = ["DataElevate[gdrive,db,mssql,cloud,delta,huggingface]"]
+dev = ["pytest>=7", "SQLAlchemy>=2.0", "deltalake>=0.18", "build", "twine"]
+
+[project.urls]
+Homepage = "https://github.com/Monal-Bhiwgade/DataElevate"
+Issues = "https://github.com/Monal-Bhiwgade/DataElevate/issues"
+Changelog = "https://github.com/Monal-Bhiwgade/DataElevate/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["DataElevate*"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

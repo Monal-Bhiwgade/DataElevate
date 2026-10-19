@@ -169,3 +169,19 @@ cython_debug/
 
 # PyPI configuration file
 .pypirc
+
+# ---- Credentials: never commit or publish these ----
+.env
+.env.*
+*.pem
+*.key
+token.json
+credentials*.json
+client_secret*.json
+service_account*.json
+kaggle.json
+.dataelevate/
+DataElevate/env.py
+# Downloaded data
+Data/
+GoogleDrive_Data/

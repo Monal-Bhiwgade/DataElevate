@@ -1,161 +1,137 @@
-import GoogleDrive_api
-import kaggle_api
-import kagglehub #type: ignore
-import os
-import re
-from googleapiclient.discovery import build
-from googleapiclient.http import MediaIoBaseDownload
-from googleapiclient.errors import HttpError
-from io import BytesIO
-import requests
-import io
-from tqdm import tqdm
-from google.auth.transport.requests import Request
-from dotenv import load_dotenv
-import base64
-import json
-import tempfile
-import shutil
-from urllib.parse import urlparse
-from EDAerror import InvalidInput
+"""Download datasets from any link, cloud storage, Kaggle, Google Drive and Hugging Face."""
 
-load_dotenv()
+import logging
+from pathlib import Path
+
+from . import _gdrive, _hf, _kaggle, _remote
+from .errors import InvalidInput
+
+log = logging.getLogger(__name__)
+
 
 class Download_data:
+    """Entry point for downloads: ``Download_data.from_url``, ``.Kaggle``,
+    ``.GoogleDrive`` and ``.HuggingFace``."""
+
+    @staticmethod
+    def from_url(url, destination=None, extract=True, storage_options=None, overwrite=False,
+                 progress=True, credentials=None):
+        """Download from any link: https (GitHub/Dropbox links fixed automatically),
+        Google Drive, Kaggle, or remote storage (s3://, gs://, az://, sftp://, ftp://,
+        github://, hf://). Folders and globs (``s3://bucket/data/*.parquet``) work too.
+
+        Archives are extracted unless ``extract=False``. Existing files in
+        ``destination`` (default ``./Data``) are reused unless ``overwrite=True``.
+
+        Returns:
+            List of local paths (files or folders), as strings.
+        """
+        return _remote.download(url, destination, extract, storage_options, overwrite,
+                                progress, credentials)
+
+    from_cloud = from_url
+
+    class HuggingFace:
+
+        @staticmethod
+        def download(name, destination=None, revision=None, token=None):
+            """Download a Hugging Face dataset repository's files (``owner/name`` or URL).
+
+            Returns the local folder. Needs ``pip install "DataElevate[huggingface]"``.
+            """
+            return _hf.download(name, destination, revision, token)
 
     class Kaggle:
 
         @staticmethod
-        def from_kaggle(dataset_path, to_path=None):
-            if 'ID' == kaggle_api.check_input_type(dataset_path):
-                dataset_url = f"https://www.kaggle.com/datasets/{dataset_path}"
-            elif 'URL' == kaggle_api.check_input_type(dataset_path):
-                dataset_url = dataset_path
-            else:
-                raise InvalidInput("Invalid Dataset URL/ID.")
+        def from_kaggle(dataset, destination=None, keep_cache=False, *, to_path=None):
+            """Download a Kaggle dataset.
 
-            if kaggle_api.is_kaggle_url_valid(dataset_url):
-                if 'ID' == kaggle_api.check_input_type(dataset_path):
-                    folder_path = kagglehub.dataset_download(f"{dataset_path}")
-                else:
-                    dataset_path = kaggle_api.extract_kaggle_dataset_name(dataset_url)
-                    folder_path = kagglehub.dataset_download(f"{dataset_path}")
+            Args:
+                dataset: Dataset URL (``https://www.kaggle.com/datasets/owner/name``)
+                    or ID (``owner/name``, optionally ``owner/name/versions/3``).
+                destination: Folder to save into. Defaults to ``./Data/<name>``.
+                keep_cache: Keep kagglehub's cached copy as well (default: remove it).
 
-                # Get the list of files in the downloaded folder
-                files = os.listdir(folder_path)
-            else:
-                raise InvalidInput("Invalid dataset URL/ID.")
-            
-            match = re.search(r'[^/]+(?=$)', dataset_path)
-            foldername = match.group(0)
-            if to_path is None:
-                to_path = os.getcwd()
-                to_path = os.path.join(to_path, f'Data/{foldername}')
-                print(to_path)
-                kaggle_api.get_kaggle_files(folder_path, files, to_path)
-                kaggle_api.remove_cache_data(folder_path)
-            elif to_path:
-                kaggle_api.get_kaggle_files(folder_path, files, to_path)
-                kaggle_api.remove_cache_data(folder_path)
-            
-            files_paths = []
-            for file in files:
-                files_path = os.path.join(to_path, file)
-                files_paths.append(files_path)
-
-            return files_paths
+            Returns:
+                List of paths to the downloaded files and folders.
+            """
+            return _kaggle.download(dataset, destination or to_path, keep_cache)
 
     class GoogleDrive:
-        @staticmethod
-        def get_file_id(link):
-            if len((link).strip()) > 0:
-                if "/" in link:
-                    parts = link.split('/')
-                    if 'folders' in parts:
-                        return parts[-1]
-                    elif 'file' in parts:
-                        return parts[5]
-                    elif 'docs.google.com' in parts:
-                        return parts[-2]
-                    else:
-                        raise ValueError("Invalid Google Drive link")
-                else:
-                    return link
-            else:
-                raise ValueError("Invalid Google Drive link")
+        """Google Drive downloads, with three ways in (tried in this order):
+
+        1. ``credentials=`` (or ``DATAELEVATE_GDRIVE_CREDENTIALS``): your own OAuth client
+           JSON (Desktop app) or service-account key JSON.
+        2. Public links ("Anyone with the link"): no sign-in at all.
+        3. Built-in sign-in: if the file isn't public, a browser opens once so you can
+           sign in with Google (read-only). No files or setup needed.
+
+        ``auth="auto"`` (default) does 2 then 3. ``auth="public"`` never signs in.
+        ``auth="oauth"`` skips straight to sign-in (handy for private folders).
+        """
 
         @staticmethod
-        def download_folder(folder_id, folder_path=None):
-            creds = GoogleDrive_api.authenticate_user()
-            service = build('drive', 'v3', credentials=creds)
-            folder_path = folder_path or os.path.join(os.getcwd(), 'GoogleDrive_Data')
-            os.makedirs(folder_path, exist_ok=True)
-            folder_id = Download_data.GoogleDrive.get_file_id(folder_id)
-
-            query = f"'{folder_id}' in parents and trashed = false"
-            results = service.files().list(q=query, fields="files(id, name, mimeType)", includeItemsFromAllDrives=True, supportsAllDrives=True).execute()
-            items = results.get('files', [])
-
-            if not items:
-                print(f"No files found in folder: {folder_id}")
-            else:
-                folder_name = os.path.basename(folder_path)
-                pbar = tqdm(total=len(items), desc=f"Processing {folder_name} folder.", position=0)
-
-                for item in items:
-                    file_id = item['id']
-                    file_name = item['name']
-                    mime_type = item['mimeType']
-
-                    if mime_type == 'application/vnd.google-apps.folder':
-                        subfolder_path = os.path.join(folder_path, file_name)
-                        Download_data.GoogleDrive.download_folder(file_id, subfolder_path)
-                        subfolder_items = service.files().list(q=f"'{file_id}' in parents and trashed = false", fields="files(id)").execute().get('files', [])
-                        pbar.total += len(subfolder_items)
-                        pbar.refresh()
-                    else:
-                        GoogleDrive_api.download_folder_file(service, file_id, os.path.join(folder_path, file_name))
-                    pbar.update(1)
-                pbar.close()
+        def get_file_id(url):
+            """Return the file or folder ID from a Google Drive link (or the ID itself)."""
+            return _gdrive.get_file_id(url)
 
         @staticmethod
-        def download_file(url, folder_path=None):
-            creds = GoogleDrive_api.authenticate_user()
-            service = build('drive', 'v3', credentials=creds)
+        def _check_auth(auth):
+            if auth not in _gdrive.AUTH_MODES:
+                raise InvalidInput(f"auth must be one of {', '.join(_gdrive.AUTH_MODES)}.")
 
-            try:
-                file_id = Download_data.GoogleDrive.get_file_id(url)
-                file_metadata = service.files().get(fileId=file_id, fields="name, mimeType").execute()
-                file_name = file_metadata['name']
-                mime_type = file_metadata['mimeType']
+        @staticmethod
+        def download_file(url, destination=None, credentials=None, progress=True, *,
+                          auth="auto", folder_path=None):
+            """Download one file. Google Docs/Sheets/Slides are exported to .docx/.xlsx/.pptx.
 
-                if folder_path is None:
-                    folder_path = os.getcwd()
-                    folder_path = os.path.join(folder_path, "GoogleDrive_Data")
-                os.makedirs(folder_path, exist_ok=True)
+            Returns:
+                Path to the downloaded file, as a string.
+            """
+            Download_data.GoogleDrive._check_auth(auth)
+            dest = Path(destination or folder_path or Path.cwd() / _gdrive.DEFAULT_DIR)
+            creds_path = _gdrive.resolve_credentials(credentials)
+            if creds_path is None and auth != "oauth":
+                try:
+                    return str(_gdrive.public_download_file(url, dest, progress))
+                except InvalidInput:
+                    if auth == "public":
+                        raise
+                    log.info("'%s' is not public; signing in with Google.", url)
+            service = _gdrive.build_service(creds_path) if creds_path else _gdrive.builtin_service()
+            return str(_gdrive.api_download_file(service, _gdrive.get_file_id(url), dest))
 
-                export_mime_types = {
-                    'application/vnd.google-apps.document': ('application/vnd.openxmlformats-officedocument.wordprocessingml.document', '.docx'),
-                    'application/vnd.google-apps.spreadsheet': ('application/vnd.openxmlformats-officedocument.spreadsheetml.sheet', '.xlsx'),
-                    'application/vnd.google-apps.presentation': ('application/vnd.openxmlformats-officedocument.presentationml.presentation', '.pptx')
-                }
+        @staticmethod
+        def download_folder(url, destination=None, credentials=None, progress=True, *,
+                            auth="auto", folder_path=None):
+            """Download a folder and its subfolders.
 
-                if mime_type in export_mime_types:
-                    export_mime_type, extension = export_mime_types[mime_type]
-                    request = service.files().export_media(fileId=file_id, mimeType=export_mime_type)
-                    file_name += extension
-                else:
-                    request = service.files().get_media(fileId=file_id)
+            Returns:
+                List of paths to the downloaded files, as strings.
+            """
+            Download_data.GoogleDrive._check_auth(auth)
+            dest = Path(destination or folder_path or Path.cwd() / _gdrive.DEFAULT_DIR)
+            creds_path = _gdrive.resolve_credentials(credentials)
+            if creds_path is None and auth != "oauth":
+                try:
+                    return [str(p) for p in _gdrive.public_download_folder(url, dest, progress)]
+                except InvalidInput:
+                    if auth == "public":
+                        raise
+                    log.info("'%s' is not public; signing in with Google.", url)
+            service = _gdrive.build_service(creds_path) if creds_path else _gdrive.builtin_service()
+            paths = _gdrive.api_download_folder(service, _gdrive.get_file_id(url), dest, progress)
+            return [str(p) for p in paths]
 
-                filepath = os.path.join(folder_path, file_name)
+        @staticmethod
+        def check_filename(url, credentials=None):
+            """Return the name of a Drive file without downloading it.
 
-                with io.FileIO(filepath, 'wb') as fh:
-                    downloader = MediaIoBaseDownload(fh, request)
-                    done = False
-                    while not done:
-                        status, done = downloader.next_chunk()
-
-                return f"{file_name} downloaded successfully."
-
-            except HttpError as error:
-                return f"An error occurred: {error}"
+            Uses your credentials file if given, otherwise the built-in Google sign-in,
+            because Google only exposes file names through its API.
+            """
+            service = _gdrive.private_service(credentials)
+            meta = service.files().get(
+                fileId=_gdrive.get_file_id(url), fields="name", supportsAllDrives=True).execute()
+            return meta["name"]
