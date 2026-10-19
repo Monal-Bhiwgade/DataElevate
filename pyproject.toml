@@ -4,20 +4,39 @@ build-backend = "setuptools.build_meta"
 
 [project]
 name = "DataElevate"
-version = "1.2.0"
-description = "Get training data from any link, cloud storage, data lakes, Kaggle, Google Drive, Hugging Face and databases into pandas with a few lines of code."
+version = "1.2.1"
+description = "Load ML training data into pandas in one line: Kaggle, Hugging Face, Google Drive, S3, GCS, Azure, Delta Lake, Parquet, URLs and SQL databases."
 readme = "README.md"
 requires-python = ">=3.9"
 license = { text = "MIT" }
 authors = [{ name = "Monal Bhiwgade" }]
-keywords = ["dataset", "data loading", "data lake", "delta lake", "parquet", "s3", "kaggle", "google drive", "hugging face", "machine learning", "pandas"]
+keywords = [
+    "dataset loader", "data loader", "load dataset", "training data", "machine learning",
+    "deep learning", "pandas", "dataframe", "data ingestion", "etl", "mlops",
+    "kaggle", "kaggle dataset download", "hugging face datasets", "google drive download",
+    "s3", "gcs", "azure blob", "data lake", "delta lake", "parquet", "sql to pandas",
+    "image dataset",
+]
 classifiers = [
-    "Programming Language :: Python :: 3",
-    "License :: OSI Approved :: MIT License",
-    "Operating System :: OS Independent",
+    "Development Status :: 4 - Beta",
     "Intended Audience :: Developers",
     "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: MacOS",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3 :: Only",
+    "Programming Language :: Python :: 3.9",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Programming Language :: Python :: 3.13",
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
+    "Topic :: Scientific/Engineering :: Information Analysis",
+    "Topic :: Database",
+    "Topic :: Software Development :: Libraries :: Python Modules",
 ]
 # Core install: local files (incl. Parquet/Feather), any https link, local data-lake
 # folders, Kaggle and Google Drive (public links and built-in sign-in). Every dependency ships wheels for all OSes.
@@ -65,8 +84,11 @@ dev = ["pytest>=7", "SQLAlchemy>=2.0", "deltalake>=0.18", "build", "twine"]
 
 [project.urls]
 Homepage = "https://github.com/Monal-Bhiwgade/DataElevate"
+Documentation = "https://github.com/Monal-Bhiwgade/DataElevate#readme"
+Source = "https://github.com/Monal-Bhiwgade/DataElevate"
 Issues = "https://github.com/Monal-Bhiwgade/DataElevate/issues"
 Changelog = "https://github.com/Monal-Bhiwgade/DataElevate/blob/main/CHANGELOG.md"
+"Release notes" = "https://github.com/Monal-Bhiwgade/DataElevate/releases"
 
 [tool.setuptools.packages.find]
 include = ["DataElevate*"]

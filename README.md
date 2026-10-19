@@ -1,11 +1,18 @@
-# DataElevate
+# DataElevate: load ML training data into pandas in one line
 
-**Get training data into pandas in a few lines of code, from wherever it lives.**
+[![PyPI version](https://img.shields.io/pypi/v/DataElevate.svg)](https://pypi.org/project/DataElevate/)
+[![Python versions](https://img.shields.io/pypi/pyversions/DataElevate.svg)](https://pypi.org/project/DataElevate/)
+[![Tests](https://github.com/Monal-Bhiwgade/DataElevate/actions/workflows/tests.yml/badge.svg)](https://github.com/Monal-Bhiwgade/DataElevate/actions/workflows/tests.yml)
+[![License: MIT](https://img.shields.io/badge/License-MIT-blue.svg)](https://github.com/Monal-Bhiwgade/DataElevate/blob/main/LICENSE)
 
-Any link, cloud storage, data lakes, Kaggle, Google Drive, Hugging Face, image folders and
-databases: DataElevate handles the downloading, unzipping, partition files, auth hand-off
-and format detection, and gives you a DataFrame. It works the same on Windows, macOS and
-Linux, with nothing to install outside `pip`.
+**DataElevate is a Python dataset loader for machine learning and data science.** It downloads
+and loads data from **Kaggle, Hugging Face, Google Drive, Amazon S3, Google Cloud Storage,
+Azure, data lakes (Parquet and Delta Lake), web links and SQL databases** straight into a
+**pandas DataFrame**, with one function call.
+
+It handles the downloading, unzipping, partition files, sign-in and format detection, so you
+can go from a dataset link to `model.fit()` without writing the plumbing every time. It works
+the same on Windows, macOS and Linux, with nothing to install outside `pip`.
 
 ```python
 from DataElevate import Load_data
@@ -13,11 +20,26 @@ from DataElevate import Load_data
 # One call, any mix of sources: detected, loaded and stacked for you
 df = Load_data.load(["data/jan.csv", "s3://lake/feb.parquet", "kaggle:owner/march-sales"])
 
-df = Load_data.from_url("https://example.com/data/train.csv")
+df = Load_data.from_kaggle("uciml/iris", file="Iris.csv")              # Kaggle dataset
+df = Load_data.from_huggingface("stanfordnlp/imdb", split="train")     # Hugging Face
+df = Load_data.from_drive("https://drive.google.com/file/d/<ID>/view") # Google Drive
 df = Load_data.from_lake("s3://company-lake/sales", columns=["user_id", "amount"],
-                         filters=[("year", "=", 2025)])
-df = Load_data.from_huggingface("stanfordnlp/imdb", split="train")
+                         filters=[("year", "=", 2025)])                # Data lake on S3
 ```
+
+### Why DataElevate?
+
+- **One API for every source:** local files, URLs, cloud storage, data lakes, Kaggle,
+  Hugging Face, Google Drive and databases all return a pandas DataFrame.
+- **Smart loader:** pass a list of mixed sources and get one combined table, with a column
+  showing where each row came from.
+- **Big data friendly:** read only the columns and partitions you need from Parquet and
+  Delta Lake tables on S3, GCS or Azure, without Spark or Java.
+- **Deep learning ready:** turn image folders (`train/cat/1.jpg`) into a path, label and
+  split table for PyTorch or TensorFlow.
+- **Cross-platform, pip-only:** every dependency ships wheels for Windows, macOS and Linux.
+- **Secure by default:** no bundled credentials, read-only Google access, SQL-injection-safe
+  table loading and safe archive extraction.
 
 ---
 
@@ -196,7 +218,7 @@ df = Load_data.from_drive("https://drive.google.com/file/d/<FILE_ID>/view?usp=sh
 For Google Drive you don't set anything up. Public links download directly. If the file
 is private, your browser opens once so you can sign in with Google (read-only access), and
 the sign-in is remembered. Prefer your own Google Cloud credentials? Pass
-`credentials="path/to/client.json"`. See [Credentials](#credentials).
+`credentials="path/to/client.json"`. See [Credentials](https://github.com/Monal-Bhiwgade/DataElevate#credentials).
 
 ### Local files
 
@@ -314,6 +336,33 @@ All errors inherit from `DataElevateError`:
 
 ---
 
+## FAQ
+
+**How do I load a Kaggle dataset into pandas?**
+`Load_data.from_kaggle("owner/dataset-name")`, or `file="train.csv"` if it has several files.
+Public datasets need no API key.
+
+**How do I download a file from Google Drive in Python?**
+`Download_data.GoogleDrive.download_file(link)` downloads it; `Load_data.from_drive(link)`
+loads it into pandas. Private files open a browser once to sign in with Google.
+
+**How do I read a Parquet or Delta Lake table from S3 into pandas?**
+`Load_data.from_lake("s3://bucket/table", columns=[...], filters=[...])`, after
+`pip install "DataElevate[lake]"`. Only the needed files and columns are read.
+
+**How do I load a Hugging Face dataset as a DataFrame?**
+`Load_data.from_huggingface("owner/name", split="train")`, after
+`pip install "DataElevate[huggingface]"`.
+
+**Can I combine data from several sources into one DataFrame?**
+Yes: `Load_data.load([...])` accepts any mix of files, links, cloud paths, Kaggle, Hugging
+Face, databases and DataFrames.
+
+**Does it work on Windows?**
+Yes. It's tested on Windows, macOS and Linux, and SQL Server works without an ODBC driver.
+
+---
+
 ## Contributing
 
 Issues and pull requests are welcome. To run the tests:
@@ -323,12 +372,24 @@ pip install -e ".[dev]"
 pytest
 ```
 
-See [SECURITY.md](SECURITY.md) to report a security issue and [CHANGELOG.md](CHANGELOG.md)
+### Releasing
+
+Publishing to PyPI is automatic. To release a new version:
+
+1. In your pull request, bump the version in **both** `pyproject.toml` and
+   `DataElevate/__init__.py`, and add a `## <version>` section to `CHANGELOG.md`.
+2. Merge the pull request into `main`.
+
+The `publish` workflow then sees that this version isn't on PyPI yet, runs the tests,
+builds, scans for secrets, uploads to PyPI, and creates the `v<version>` tag and GitHub
+Release. Merges that don't change the version publish nothing.
+
+See [SECURITY.md](https://github.com/Monal-Bhiwgade/DataElevate/blob/main/SECURITY.md) to report a security issue and [CHANGELOG.md](https://github.com/Monal-Bhiwgade/DataElevate/blob/main/CHANGELOG.md)
 for release notes.
 
 ## License
 
-MIT. See [LICENSE](LICENSE).
+MIT. See [LICENSE](https://github.com/Monal-Bhiwgade/DataElevate/blob/main/LICENSE).
 
 ## Author
 
