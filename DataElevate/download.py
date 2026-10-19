@@ -1,9 +1,12 @@
 """Download datasets from any link, cloud storage, Kaggle, Google Drive and Hugging Face."""
 
+import logging
 from pathlib import Path
 
 from . import _gdrive, _hf, _kaggle, _remote
-from .errors import CredentialsError
+from .errors import InvalidInput
+
+log = logging.getLogger(__name__)
 
 
 class Download_data:
@@ -56,12 +59,16 @@ class Download_data:
             return _kaggle.download(dataset, destination or to_path, keep_cache)
 
     class GoogleDrive:
-        """Google Drive downloads.
+        """Google Drive downloads, with three ways in (tried in this order):
 
-        Public files and folders ("Anyone with the link") need no setup. For private
-        ones, pass ``credentials=`` the path to your own Google OAuth client JSON
-        (Desktop app) or service-account key JSON, or set the
-        ``DATAELEVATE_GDRIVE_CREDENTIALS`` environment variable to that path.
+        1. ``credentials=`` (or ``DATAELEVATE_GDRIVE_CREDENTIALS``): your own OAuth client
+           JSON (Desktop app) or service-account key JSON.
+        2. Public links ("Anyone with the link"): no sign-in at all.
+        3. Built-in sign-in: if the file isn't public, a browser opens once so you can
+           sign in with Google (read-only). No files or setup needed.
+
+        ``auth="auto"`` (default) does 2 then 3. ``auth="public"`` never signs in.
+        ``auth="oauth"`` skips straight to sign-in (handy for private folders).
         """
 
         @staticmethod
@@ -70,50 +77,61 @@ class Download_data:
             return _gdrive.get_file_id(url)
 
         @staticmethod
+        def _check_auth(auth):
+            if auth not in _gdrive.AUTH_MODES:
+                raise InvalidInput(f"auth must be one of {', '.join(_gdrive.AUTH_MODES)}.")
+
+        @staticmethod
         def download_file(url, destination=None, credentials=None, progress=True, *,
-                          folder_path=None):
+                          auth="auto", folder_path=None):
             """Download one file. Google Docs/Sheets/Slides are exported to .docx/.xlsx/.pptx.
 
             Returns:
                 Path to the downloaded file, as a string.
             """
+            Download_data.GoogleDrive._check_auth(auth)
             dest = Path(destination or folder_path or Path.cwd() / _gdrive.DEFAULT_DIR)
             creds_path = _gdrive.resolve_credentials(credentials)
-            if creds_path is None:
-                return str(_gdrive.public_download_file(url, dest, progress))
-            service = _gdrive.build_service(creds_path)
+            if creds_path is None and auth != "oauth":
+                try:
+                    return str(_gdrive.public_download_file(url, dest, progress))
+                except InvalidInput:
+                    if auth == "public":
+                        raise
+                    log.info("'%s' is not public; signing in with Google.", url)
+            service = _gdrive.build_service(creds_path) if creds_path else _gdrive.builtin_service()
             return str(_gdrive.api_download_file(service, _gdrive.get_file_id(url), dest))
 
         @staticmethod
         def download_folder(url, destination=None, credentials=None, progress=True, *,
-                            folder_path=None):
+                            auth="auto", folder_path=None):
             """Download a folder and its subfolders.
 
             Returns:
                 List of paths to the downloaded files, as strings.
             """
+            Download_data.GoogleDrive._check_auth(auth)
             dest = Path(destination or folder_path or Path.cwd() / _gdrive.DEFAULT_DIR)
             creds_path = _gdrive.resolve_credentials(credentials)
-            if creds_path is None:
-                paths = _gdrive.public_download_folder(url, dest, progress)
-            else:
-                service = _gdrive.build_service(creds_path)
-                paths = _gdrive.api_download_folder(
-                    service, _gdrive.get_file_id(url), dest, progress)
+            if creds_path is None and auth != "oauth":
+                try:
+                    return [str(p) for p in _gdrive.public_download_folder(url, dest, progress)]
+                except InvalidInput:
+                    if auth == "public":
+                        raise
+                    log.info("'%s' is not public; signing in with Google.", url)
+            service = _gdrive.build_service(creds_path) if creds_path else _gdrive.builtin_service()
+            paths = _gdrive.api_download_folder(service, _gdrive.get_file_id(url), dest, progress)
             return [str(p) for p in paths]
 
         @staticmethod
         def check_filename(url, credentials=None):
             """Return the name of a Drive file without downloading it.
 
-            Needs credentials, because Google only exposes file names through its API.
+            Uses your credentials file if given, otherwise the built-in Google sign-in,
+            because Google only exposes file names through its API.
             """
-            creds_path = _gdrive.resolve_credentials(credentials)
-            if creds_path is None:
-                raise CredentialsError(
-                    "check_filename() needs Google credentials. Pass credentials="
-                    f"'path/to/credentials.json' or set {_gdrive.ENV_VAR}.")
-            service = _gdrive.build_service(creds_path)
+            service = _gdrive.private_service(credentials)
             meta = service.files().get(
                 fileId=_gdrive.get_file_id(url), fields="name", supportsAllDrives=True).execute()
             return meta["name"]

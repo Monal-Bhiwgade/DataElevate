@@ -98,7 +98,7 @@ def test_public_failure_gives_sharing_hint(tmp_path, monkeypatch):
     monkeypatch.setitem(sys.modules, "gdown", types.SimpleNamespace(
         download=lambda **kw: None))
     with pytest.raises(InvalidInput, match="Anyone with the link"):
-        Download_data.GoogleDrive.download_file(FILE_ID, tmp_path)
+        Download_data.GoogleDrive.download_file(FILE_ID, tmp_path, auth="public")
 
 
 def test_missing_credentials_file(tmp_path):
@@ -115,9 +115,15 @@ def test_env_var_credentials_used(tmp_path, monkeypatch):
         Download_data.GoogleDrive.download_file(FILE_ID, tmp_path)
 
 
-def test_check_filename_needs_credentials():
-    with pytest.raises(CredentialsError):
-        Download_data.GoogleDrive.check_filename(FILE_ID)
+def test_check_filename_uses_sign_in_without_credentials(monkeypatch):
+    class Svc:
+        def files(self):
+            return self
+
+        def get(self, **kw):
+            return types.SimpleNamespace(execute=lambda: {"name": "train.csv"})
+    monkeypatch.setattr(_gdrive, "builtin_service", lambda: Svc())
+    assert Download_data.GoogleDrive.check_filename(FILE_ID) == "train.csv"
 
 
 @pytest.mark.skipif(os.name == "nt", reason="POSIX permissions")
@@ -175,3 +181,159 @@ def test_api_folder_pages_and_recurses(tmp_path, monkeypatch):
     paths = _gdrive.api_download_folder(FakeService(tree), "root", tmp_path / "out", progress=False)
     assert len(paths) == 6  # all 5 files across 3 pages + 1 in the subfolder
     assert (tmp_path / "out" / ".._evil" / "inner.csv") in saved
+
+
+# ------------------------------------------------------------ built-in sign-in
+
+DESKTOP_CLIENT = {"installed": dict(
+    client_id="123-abc.apps.googleusercontent.com",
+    client_secret="desktop-secret-not-confidential",
+    auth_uri="https://accounts.google.com/o/oauth2/auth",
+    token_uri="https://oauth2.googleapis.com/token",
+    redirect_uris=["http://localhost"],
+)}
+
+
+class FakeResponse:
+    def __init__(self, payload, status=200):
+        self.payload, self.status = payload, status
+
+    def raise_for_status(self):
+        if self.status >= 400:
+            raise RuntimeError(f"HTTP {self.status}")
+
+    def json(self):
+        return self.payload
+
+
+@pytest.fixture
+def remote_config(monkeypatch):
+    state = {"payload": DESKTOP_CLIENT, "status": 200, "calls": []}
+
+    def get(url, timeout=None):
+        state["calls"].append(url)
+        if isinstance(state["payload"], Exception):
+            raise state["payload"]
+        return FakeResponse(state["payload"], state["status"])
+
+    monkeypatch.setitem(sys.modules, "requests", types.SimpleNamespace(get=get))
+    return state
+
+
+def test_builtin_config_fetched_and_cached(remote_config):
+    first = _gdrive.builtin_client_config()
+    second = _gdrive.builtin_client_config()
+    assert first["installed"]["client_id"] == DESKTOP_CLIENT["installed"]["client_id"]
+    assert first == second and len(remote_config["calls"]) == 1
+    assert remote_config["calls"][0] == _gdrive.DEFAULT_CLIENT_URL
+    cache = _gdrive.config_dir() / "gdrive-client.json"
+    if os.name != "nt":
+        assert stat.S_IMODE(cache.stat().st_mode) == 0o600
+
+
+def test_stale_cache_is_refreshed(remote_config):
+    _gdrive.builtin_client_config()
+    cache = _gdrive.config_dir() / "gdrive-client.json"
+    old = cache.stat().st_mtime - _gdrive.CLIENT_CACHE_SECONDS - 10
+    os.utime(cache, (old, old))
+    _gdrive.builtin_client_config()
+    assert len(remote_config["calls"]) == 2
+
+
+def test_offline_uses_cached_copy(remote_config):
+    _gdrive.builtin_client_config()
+    remote_config["payload"] = ConnectionError("offline")
+    assert _gdrive.builtin_client_config(force_refresh=True)["installed"]["client_id"]
+
+
+def test_offline_without_cache_explains_alternatives(remote_config):
+    remote_config["payload"] = ConnectionError("offline")
+    with pytest.raises(CredentialsError, match="credentials="):
+        _gdrive.builtin_client_config()
+
+
+@pytest.mark.parametrize("payload", [
+    {"type": "service_account", "private_key": "x", "client_email": "a@b"},
+    {"web": {"client_id": "x"}},
+    {"installed": {}},
+    ["not", "a", "dict"],
+])
+def test_remote_config_must_be_desktop_client(remote_config, payload):
+    remote_config["payload"] = payload
+    with pytest.raises(CredentialsError, match="Desktop-app"):
+        _gdrive.builtin_client_config()
+
+
+def test_client_url_override_must_be_https(monkeypatch):
+    monkeypatch.setenv(_gdrive.CLIENT_URL_ENV, "http://example.com/c.json")
+    with pytest.raises(CredentialsError, match="https"):
+        _gdrive.builtin_client_config()
+
+
+def test_rotated_client_is_refetched(remote_config, monkeypatch):
+    built = []
+
+    def fake_service(info):
+        built.append(info["installed"]["client_id"])
+        if info["installed"]["client_id"].startswith("123"):
+            raise RuntimeError("Error 401: deleted_client")
+        return "service"
+
+    monkeypatch.setattr(_gdrive, "_service_from_info", fake_service)
+    _gdrive.builtin_client_config()  # cache the old client
+    remote_config["payload"] = {"installed": {"client_id": "456-new.apps.googleusercontent.com"}}
+    assert _gdrive.builtin_service() == "service"
+    assert built == ["123-abc.apps.googleusercontent.com", "456-new.apps.googleusercontent.com"]
+
+
+@pytest.fixture
+def api_spy(monkeypatch, tmp_path):
+    used = []
+    monkeypatch.setattr(_gdrive, "builtin_service", lambda: used.append("builtin") or "svc")
+    monkeypatch.setattr(_gdrive, "build_service", lambda p: used.append("own") or "svc")
+
+    def api_file(service, file_id, dest, name=None, mime_type=None):
+        path = Path(dest) / "private.csv"
+        path.parent.mkdir(parents=True, exist_ok=True)
+        path.write_text("a\n5\n")
+        return path
+
+    monkeypatch.setattr(_gdrive, "api_download_file", api_file)
+    monkeypatch.setattr(_gdrive, "api_download_folder",
+                        lambda s, fid, dest, progress: [api_file(s, fid, dest)])
+    return used
+
+
+@pytest.fixture
+def gdown_private(monkeypatch):
+    monkeypatch.setitem(sys.modules, "gdown", types.SimpleNamespace(
+        download=lambda **kw: None, download_folder=lambda **kw: None))
+
+
+def test_auto_falls_back_to_sign_in_when_not_public(tmp_path, api_spy, gdown_private):
+    df = Load_data.from_drive(FILE_ID, destination=tmp_path)
+    assert df["a"].tolist() == [5] and api_spy == ["builtin"]
+
+
+def test_public_mode_never_signs_in(tmp_path, api_spy, gdown_private):
+    with pytest.raises(InvalidInput, match="auth='oauth'"):
+        Download_data.GoogleDrive.download_file(FILE_ID, tmp_path, auth="public")
+    assert api_spy == []
+
+
+def test_oauth_mode_skips_public_attempt(tmp_path, api_spy, fake_gdown):
+    Download_data.GoogleDrive.download_folder(
+        f"https://drive.google.com/drive/folders/{FILE_ID}", tmp_path, auth="oauth")
+    assert api_spy == ["builtin"] and fake_gdown == []
+
+
+def test_own_credentials_take_priority(tmp_path, api_spy, fake_gdown):
+    creds = tmp_path / "mine.json"
+    creds.write_text("{}")
+    Download_data.GoogleDrive.download_file(FILE_ID, tmp_path, credentials=creds)
+    assert api_spy == ["own"] and fake_gdown == []
+
+
+def test_bad_auth_value(tmp_path):
+    with pytest.raises(InvalidInput, match="auth must be"):
+        Download_data.GoogleDrive.download_file(FILE_ID, tmp_path, auth="magic")

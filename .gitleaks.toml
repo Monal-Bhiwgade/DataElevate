@@ -1,0 +1,9 @@
+# The built-in Google sign-in config is a Desktop-app OAuth client, which Google treats
+# as non-confidential and which is published on purpose (see oauth/README.md).
+# tests/test_repo_oauth.py checks that this file only ever holds that kind of client.
+[extend]
+useDefault = true
+
+[allowlist]
+description = "Intentionally public Desktop-app OAuth client config"
+paths = ['''^oauth/gdrive-client\.json$''']

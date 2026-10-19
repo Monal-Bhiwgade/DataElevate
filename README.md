@@ -25,7 +25,7 @@ pip install DataElevate
 ```
 
 The core install covers local files, any `https://` link, local data-lake folders, Kaggle
-and public Google Drive links. Add extras only for what you need:
+and Google Drive (public links and Google sign-in). Add extras only for what you need:
 
 | Extra | Adds |
 |---|---|
@@ -34,7 +34,6 @@ and public Google Drive links. Add extras only for what you need:
 | `delta` | Delta Lake tables (no Spark or Java needed) |
 | `lake` | `cloud` + `delta` |
 | `huggingface` | Hugging Face Hub datasets |
-| `gdrive` | Private Google Drive files (your own credentials) |
 | `db` | PostgreSQL, MySQL/MariaDB, Oracle, SQLite |
 | `mssql` | SQL Server / Azure SQL (no ODBC install needed) |
 | `all` | Everything above |
@@ -131,8 +130,15 @@ TensorFlow data loader. Wrapper folders inside zips are handled.
 
 ```python
 df = Load_data.from_kaggle("uciml/iris", file="Iris.csv")
+
+# Public or private Drive file: same call
 df = Load_data.from_drive("https://drive.google.com/file/d/<FILE_ID>/view?usp=sharing")
 ```
+
+For Google Drive you don't set anything up. Public links download directly. If the file
+is private, your browser opens once so you can sign in with Google (read-only access), and
+the sign-in is remembered. Prefer your own Google Cloud credentials? Pass
+`credentials="path/to/client.json"`. See [Credentials](#credentials).
 
 ### Local files
 
@@ -187,8 +193,8 @@ and `.xz`. Archives that try to write outside the destination folder are blocked
 
 ## Credentials
 
-**DataElevate never ships or stores anyone else's credentials.** It always uses yours,
-from the place each service normally keeps them:
+**The DataElevate package contains no credentials, and your keys and sign-ins never leave
+your machine.** Each service uses your own access, from where it normally keeps it:
 
 | Service | Where your credentials come from |
 |---|---|
@@ -198,22 +204,38 @@ from the place each service normally keeps them:
 | SFTP | Your SSH key / agent, or `storage_options={"username": ..., "key_filename": ...}` |
 | Hugging Face | Public datasets: none. Gated/private: `HF_TOKEN` or `token=` |
 | Kaggle | Public datasets: none. Private: `KAGGLE_USERNAME` + `KAGGLE_KEY`, or `~/.kaggle/kaggle.json` |
-| Google Drive | Public links: none. Private: see below |
+| Google Drive | Public links: none. Private: just sign in with Google, or use your own file (below) |
 
 You can always pass settings directly with `storage_options={...}` (for Delta tables these
 are the `deltalake` storage options, e.g. `{"AWS_REGION": "ap-south-1"}`).
 
-### Private Google Drive files
+### Google Drive: two ways to access private files
 
-1. `pip install "DataElevate[gdrive]"`
-2. In [Google Cloud Console](https://console.cloud.google.com/), enable the **Google Drive API**
-   and create an **OAuth client ID** of type **Desktop app**. Download the JSON.
-   (A **service account** key JSON also works; share the files with the service account.)
-3. Point DataElevate at it per call (`credentials="~/secrets/gdrive.json"`) or once with
+**1. Sign in with Google (default, zero setup).** When a file isn't public, DataElevate
+opens your browser, you sign in and allow read-only access, and that's it. The sign-in is
+saved in `~/.dataelevate/tokens/` (readable only by you) and reused. Your token never
+leaves your machine.
+
+```python
+df = Load_data.from_drive(private_link)                 # tries public, then signs in
+df = Load_data.from_drive(private_folder, auth="oauth")  # go straight to sign-in
+df = Load_data.from_drive(link, auth="public")           # never sign in
+```
+
+Notes: sign-in needs a browser on the same machine, so on remote servers and CI use option
+2 with a service account. DataElevate's sign-in app is not yet verified by Google, so
+you'll see a "Google hasn't verified this app" screen; choose *Advanced → continue*.
+
+**2. Your own credentials file.** Full control, no shared app, works on servers.
+
+1. In [Google Cloud Console](https://console.cloud.google.com/), enable the **Google Drive
+   API** and create an **OAuth client ID** of type **Desktop app** (or a **service account**
+   key, and share the files with the service account). Download the JSON.
+2. Pass it per call (`credentials="~/secrets/gdrive.json"`) or once with
    `export DATAELEVATE_GDRIVE_CREDENTIALS=~/secrets/gdrive.json`.
 
-The first call opens a browser to sign in. Access is **read-only**. The token is cached in
-`~/.dataelevate/tokens/` (readable only by you); set `DATAELEVATE_HOME` to move it.
+Your own credentials always take priority over the built-in sign-in. Access is read-only
+either way. Set `DATAELEVATE_HOME` to move the token folder.
 
 Keep credential files outside your project folder and never commit them.
 

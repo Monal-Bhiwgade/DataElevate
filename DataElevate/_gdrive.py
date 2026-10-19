@@ -1,13 +1,17 @@
 """Google Drive helpers.
 
-DataElevate never ships its own Google credentials. There are two ways in:
+Three ways in, tried in this order:
 
-* Public files and folders ("Anyone with the link") are downloaded with
-  ``gdown``. No login, no credentials.
-* Private files use the Google Drive API with credentials the *user* supplies:
-  either an OAuth client JSON (Desktop app) or a service-account key JSON,
-  passed as ``credentials=`` or through the ``DATAELEVATE_GDRIVE_CREDENTIALS``
-  environment variable. Access is read-only.
+1. Your own credentials file (``credentials=`` or ``DATAELEVATE_GDRIVE_CREDENTIALS``):
+   an OAuth client JSON (Desktop app) or a service-account key JSON.
+2. Public files and folders ("Anyone with the link") through ``gdown``. No sign-in.
+3. Built-in sign-in: a browser window opens once, you sign in with Google, and
+   DataElevate gets read-only access. The app's desktop OAuth client config is NOT
+   shipped in the package; it is fetched from the DataElevate repository (so it can
+   be rotated without a new release) and cached for a week. Your sign-in token
+   never leaves your machine.
+
+Access is always read-only.
 """
 
 import hashlib
@@ -16,6 +20,8 @@ import json
 import logging
 import os
 import re
+import sys
+import time
 from pathlib import Path
 
 from ._deps import require
@@ -35,6 +41,13 @@ EXPORT_MIME_TYPES = {
         "application/vnd.openxmlformats-officedocument.presentationml.presentation", ".pptx"),
 }
 DEFAULT_DIR = "GoogleDrive_Data"
+
+# Built-in sign-in: where the app's (public, desktop-type) OAuth client config lives.
+CLIENT_URL_ENV = "DATAELEVATE_GDRIVE_CLIENT_URL"
+DEFAULT_CLIENT_URL = ("https://raw.githubusercontent.com/Monal-Bhiwgade/DataElevate/"
+                      "main/oauth/gdrive-client.json")
+CLIENT_CACHE_SECONDS = 7 * 24 * 3600
+AUTH_MODES = ("auto", "public", "oauth")
 
 _ID_PATTERNS = (
     re.compile(r"/folders/([\w-]+)"),
@@ -118,18 +131,23 @@ def _user_oauth_credentials(client_config):
             log.info("Stored Google token could not be refreshed; signing in again.")
 
     flow = flow_mod.InstalledAppFlow.from_client_config(client_config, SCOPES)
+    print("DataElevate: opening your browser to sign in to Google (read-only Drive access)."
+          " If no browser opens, use the link printed below.", file=sys.stderr)
     creds = flow.run_local_server(port=0)
     _write_private(token_path, creds.to_json())
     return creds
 
 
 def build_service(credentials_path):
-    """Build a read-only Drive v3 client from the user's credentials file."""
+    """Build a read-only Drive v3 client from the user's own credentials file."""
     try:
         info = json.loads(Path(credentials_path).read_text())
     except (OSError, ValueError) as exc:
         raise CredentialsError(f"Could not read Google credentials JSON: {exc}") from exc
+    return _service_from_info(info)
 
+
+def _service_from_info(info):
     if info.get("type") == "service_account":
         sa = require("google.oauth2.service_account", "google-auth", "gdrive")
         creds = sa.Credentials.from_service_account_info(info, scopes=SCOPES)
@@ -142,6 +160,72 @@ def build_service(credentials_path):
         )
     discovery = require("googleapiclient.discovery", "google-api-python-client", "gdrive")
     return discovery.build("drive", "v3", credentials=creds, cache_discovery=False)
+
+
+def _validate_client_config(info, source):
+    """Only accept a desktop ("installed") OAuth client. Never a service-account key."""
+    section = info.get("installed") if isinstance(info, dict) else None
+    if not isinstance(section, dict) or not section.get("client_id"):
+        raise CredentialsError(
+            f"{source} is not a Desktop-app OAuth client config; refusing to use it.")
+    return {"installed": section}
+
+
+def builtin_client_config(force_refresh=False):
+    """Return DataElevate's desktop OAuth client config (fetched, then cached)."""
+    url = os.environ.get(CLIENT_URL_ENV) or DEFAULT_CLIENT_URL
+    if not url.lower().startswith("https://"):
+        raise CredentialsError(f"{CLIENT_URL_ENV} must be an https:// URL.")
+    cache = config_dir() / "gdrive-client.json"
+
+    cached = None
+    if cache.is_file():
+        try:
+            cached = _validate_client_config(json.loads(cache.read_text()), "Cached client")
+        except (OSError, ValueError, CredentialsError):
+            cached = None
+        fresh = time.time() - cache.stat().st_mtime < CLIENT_CACHE_SECONDS
+        if cached and fresh and not force_refresh:
+            return cached
+
+    requests = require("requests", "requests", None)
+    try:
+        resp = requests.get(url, timeout=15)
+        resp.raise_for_status()
+        info = _validate_client_config(resp.json(), url)
+    except Exception as exc:
+        if cached:
+            log.warning("Could not refresh Google sign-in config (%s); using cached copy.", exc)
+            return cached
+        raise CredentialsError(
+            f"Could not get DataElevate's Google sign-in config from {url}: {exc}\n"
+            f"Alternatively pass credentials='path/to/your-client.json' or set {ENV_VAR}."
+        ) from exc
+    _write_private(cache, json.dumps(info))
+    return info
+
+
+_ROTATED_CLIENT_ERRORS = ("invalid_client", "deleted_client", "unauthorized_client")
+
+
+def builtin_service():
+    """Drive client using the built-in sign-in, retrying once if the app client was rotated."""
+    info = builtin_client_config()
+    try:
+        return _service_from_info(info)
+    except Exception as exc:
+        if not any(code in str(exc) for code in _ROTATED_CLIENT_ERRORS):
+            raise
+        newer = builtin_client_config(force_refresh=True)
+        if newer == info:
+            raise
+        return _service_from_info(newer)
+
+
+def private_service(credentials=None):
+    """Drive client from the user's own credentials if given, else built-in sign-in."""
+    path = resolve_credentials(credentials)
+    return build_service(path) if path else builtin_service()
 
 
 # ------------------------------------------------------------------- downloads
@@ -271,9 +355,10 @@ def _public_hint(link, exc=None, folder=False):
     what = "folder" if folder else "file"
     detail = f" ({exc})" if exc else ""
     extra = (" Public folder downloads are limited to 50 files per folder;"
-             " use credentials for larger folders.") if folder else ""
+             " use auth='oauth' (sign in) for larger folders.") if folder else ""
     return (
         f"Could not download the Google Drive {what} '{link}'{detail}. "
-        f"Make sure it is shared as 'Anyone with the link'. For private {what}s, pass "
-        f"credentials='path/to/credentials.json' or set {ENV_VAR}.{extra}"
+        f"Share it as 'Anyone with the link', or if it is private use auth='oauth' to "
+        f"sign in with Google, or pass "
+        f"credentials='path/to/credentials.json'.{extra}"
     )

@@ -52,18 +52,18 @@ class Load_data:
         return _loaders.load(_pick_file(url, paths, file), **kwargs)
 
     @staticmethod
-    def from_drive(url, file=None, destination=None, credentials=None, **kwargs):
+    def from_drive(url, file=None, destination=None, credentials=None, auth="auto", **kwargs):
         """Download a Google Drive file (or folder) and load it.
 
-        Public links need no setup; for private files pass ``credentials=``
-        (see ``Download_data.GoogleDrive``).
+        Public links need nothing. Private ones open a browser once to sign in with
+        Google (read-only), or use your own ``credentials=`` file. ``auth`` is "auto"
+        (default), "public" or "oauth"; see ``Download_data.GoogleDrive``.
         """
+        gd = Download_data.GoogleDrive
         if "/folders/" in str(url):
-            paths = Download_data.GoogleDrive.download_folder(
-                url, destination, credentials=credentials)
+            paths = gd.download_folder(url, destination, credentials=credentials, auth=auth)
         else:
-            paths = [Download_data.GoogleDrive.download_file(
-                url, destination, credentials=credentials)]
+            paths = [gd.download_file(url, destination, credentials=credentials, auth=auth)]
         return _loaders.load(_pick_file(url, paths, file), **kwargs)
 
     @staticmethod

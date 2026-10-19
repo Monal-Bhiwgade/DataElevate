@@ -20,7 +20,7 @@ classifiers = [
     "Topic :: Scientific/Engineering :: Artificial Intelligence",
 ]
 # Core install: local files (incl. Parquet/Feather), any https link, local data-lake
-# folders, Kaggle and public Google Drive. Every dependency ships wheels for all OSes.
+# folders, Kaggle and Google Drive (public links and built-in sign-in). Every dependency ships wheels for all OSes.
 dependencies = [
     "pandas>=1.5",
     "pyarrow>=12",
@@ -30,15 +30,14 @@ dependencies = [
     "tqdm>=4.60",
     "gdown>=5.1",
     "kagglehub>=0.3",
-]
-
-[project.optional-dependencies]
-# Private Google Drive files with your own credentials
-gdrive = [
     "google-api-python-client>=2.100",
     "google-auth>=2.20",
     "google-auth-oauthlib>=1.0",
 ]
+
+[project.optional-dependencies]
+# Kept for compatibility: Google sign-in is now part of the core install
+gdrive = []
 # PostgreSQL, MySQL/MariaDB, Oracle, SQLite
 db = [
     "SQLAlchemy>=2.0",

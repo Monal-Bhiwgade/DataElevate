@@ -15,6 +15,12 @@ More sources, focused on data that is painful to fetch by hand.
   and `s3://`, `gs://`, `az://`/`abfs://`, `sftp://`, `ftp://`, `github://`, `hf://`.
   Folders and globs work; archives are extracted; downloads are cached.
   `from_cloud()` is an alias.
+- **Google sign-in for private Drive files, zero setup:** if a file isn't public, a browser
+  opens once to sign in with Google (read-only); the sign-in is cached on the user's machine.
+  The app's Desktop-app OAuth client is not shipped in the package. It is fetched from
+  `oauth/gdrive-client.json` in the repository (cached 7 days, re-fetched if the client is
+  rotated) and must be a Desktop-app client; anything else is refused. `auth="auto"`
+  (default), `"public"` or `"oauth"`. Your own `credentials=` file still takes priority.
 - **Hugging Face:** `Load_data.from_huggingface()` and `Download_data.HuggingFace.download()`.
 - **Image datasets:** `Load_data.from_images()` indexes class/split folders (local, archive
   or any link) into a `path`, `label`, `split` DataFrame.
@@ -26,7 +32,9 @@ More sources, focused on data that is painful to fetch by hand.
 ### Changed
 - SQL Server / Azure SQL use `pymssql` by default, so no Microsoft ODBC driver install is
   needed. Pass `driver="ODBC Driver 18 for SQL Server"` to use pyodbc (`[mssql-odbc]`).
-- Core dependencies now include `pyarrow`, `fsspec` and `requests` (wheels on every OS).
+- Core dependencies now include `pyarrow`, `fsspec`, `requests` and the Google auth
+  libraries (wheels on every OS). The `[gdrive]` extra is now empty and kept for compatibility.
+- `GoogleDrive.check_filename()` uses the built-in sign-in when no credentials are given.
 
 ## 1.1.0
 
