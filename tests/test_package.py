@@ -47,8 +47,16 @@ def test_import_does_not_load_optional_dependencies():
 
 
 def test_public_api_and_version():
-    assert DataElevate.__version__ == "1.2.0"
+    assert DataElevate.__version__ == "1.2.1"
     for name in ("Download_data", "Load_data", "Extractor", "DataElevateError"):
         assert hasattr(DataElevate, name)
     from DataElevate.EDAerror import InvalidInput  # old module path still works
     assert InvalidInput is DataElevate.InvalidInput
+
+
+def test_versions_match_for_release():
+    """The auto-publish workflow refuses to release if these two disagree."""
+    root = PACKAGE_DIR.parent
+    pyproject = (root / "pyproject.toml").read_text()
+    match = re.search(r'^version\s*=\s*"([^"]+)"', pyproject, re.MULTILINE)
+    assert match and match.group(1) == DataElevate.__version__

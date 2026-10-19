@@ -1,0 +1,50 @@
+name: Bug report
+description: Something doesn't work as expected
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for reporting! Please **remove any passwords, tokens, keys or private URLs**
+        from code and error messages before posting.
+  - type: textarea
+    id: what
+    attributes:
+      label: What happened?
+      description: What you ran, what you expected, and what happened instead.
+    validations:
+      required: true
+  - type: textarea
+    id: code
+    attributes:
+      label: Code to reproduce
+      render: python
+      placeholder: |
+        from DataElevate import Load_data
+        df = Load_data.from_url("...")
+    validations:
+      required: true
+  - type: textarea
+    id: error
+    attributes:
+      label: Full error message
+      render: text
+  - type: input
+    id: version
+    attributes:
+      label: DataElevate version
+      placeholder: python -c "import DataElevate; print(DataElevate.__version__)"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options: [Windows, macOS, Linux, Other]
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version
+      placeholder: "3.12"

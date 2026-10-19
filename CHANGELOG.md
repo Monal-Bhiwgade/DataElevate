@@ -1,5 +1,17 @@
 # Changelog
 
+## 1.2.1
+
+Better discoverability on PyPI and GitHub. No code changes.
+
+- Clearer PyPI summary, more search keywords, Python 3.9–3.13 and OS classifiers, and
+  Documentation, Source and Release notes links.
+- README: search-friendly introduction, badges, a "Why DataElevate?" section and an FAQ.
+  Links now work on the PyPI page.
+- Releases now publish to PyPI automatically when a version bump is merged into `main`.
+- CI also tests Python 3.13.
+- Contributor guide, code of conduct, and issue and pull request templates.
+
 ## 1.2.0
 
 More sources, focused on data that is painful to fetch by hand.
