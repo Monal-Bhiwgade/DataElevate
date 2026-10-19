@@ -1,175 +1,178 @@
-# DataQuest
+# DataElevate
 
-**DataQuest** is a Python library designed to streamline the process of downloading, loading, and extracting data from various sources such as Google Drive, Kaggle, and local archives. It simplifies working with data files, enabling developers and analysts to focus on their data analysis tasks.
+**Get training data into pandas in a few lines of code.**
 
----
+DataElevate downloads datasets from Kaggle and Google Drive, extracts archives, and loads
+CSV, TSV/TXT and Excel files (or database tables) straight into a DataFrame, so you can
+go from a dataset link to training a model without writing the plumbing every time.
 
-## Features
+```python
+from DataElevate import Load_data
 
-- **Download Data**: 
-  - Easily download files from Google Drive and Kaggle.
-- **Load Data**: 
-  - Load data directly from CSV, Excel, text, or other supported file formats.
-- **Extract Archives**:
-  - Extract files from compressed archives (e.g., `.zip`, `.tar`, `.gz`).
+df = Load_data.from_kaggle("uciml/iris", file="Iris.csv")
+```
 
 ---
 
 ## Installation
 
-Install the package using pip:
-
 ```bash
-pip install dataquest
+pip install DataElevate
 ```
+
+The core install covers local files, Kaggle and public Google Drive links. Add extras
+only for what you need:
+
+| Extra | Install | Adds |
+|---|---|---|
+| `gdrive` | `pip install "DataElevate[gdrive]"` | Private Google Drive files (your own credentials) |
+| `db` | `pip install "DataElevate[db]"` | PostgreSQL, MySQL/MariaDB, Oracle, SQLite |
+| `mssql` | `pip install "DataElevate[mssql]"` | SQL Server / Azure SQL (also needs the Microsoft ODBC driver) |
+| `all` | `pip install "DataElevate[all]"` | Everything above |
+
+Requires Python 3.9+.
 
 ---
 
 ## Quickstart
 
-Here's how to get started with DataQuest:
+```python
+from DataElevate import Download_data, Load_data, Extractor
+```
 
-### 1. Import the Library
+### Load data straight into a DataFrame
 
 ```python
-from dataquest import Download_data, Load_data, Extractor
+# Local file: .csv, .tsv, .txt (delimiter auto-detected), .xlsx, .xls
+df = Load_data.from_local("data/train.csv")
+
+# Kaggle: URL or "owner/dataset-name"
+df = Load_data.from_kaggle("https://www.kaggle.com/datasets/uciml/iris")
+
+# The dataset has several files? Pick one:
+df = Load_data.from_kaggle("owner/dataset-name", file="train.csv")
+
+# Google Drive: a public share link works with no setup
+df = Load_data.from_drive("https://drive.google.com/file/d/<FILE_ID>/view?usp=sharing")
 ```
 
-## 2. Download Data
+Extra keyword arguments go to pandas, e.g. `Load_data.from_local("big.csv", nrows=1000)`.
 
-### `GoogleDrive`
-Downloads a files/ folders from Google Drive.
+### Download data
 
-### File download
 ```python
-Download_data.GoogleDrive.download_file(url/ file_id: str, destination: str) #destination: Optional
+# Kaggle: saved to ./Data/<dataset-name> unless you pass a destination
+paths = Download_data.Kaggle.from_kaggle("owner/dataset-name", destination="data/")
+
+# Google Drive: files and folders (subfolders included)
+path  = Download_data.GoogleDrive.download_file("<link or ID>", destination="data/")
+paths = Download_data.GoogleDrive.download_folder("<folder link or ID>", destination="data/")
+
+# Google Docs/Sheets/Slides are exported to .docx / .xlsx / .pptx
 ```
 
-### Folder download
-```python 
-Download_data.GoogleDrive.download_folder(url/ file_id: str, destination: str) #destination: Optional
-```
+### Extract archives
 
-### Check FileName
 ```python
-Download_data.GoogleDrive.check_filename(url/ file_id: str)
+Extractor.extract_archive("data/images.zip", destination="data/images")
 ```
 
-### Get Id of file
+Supports `.zip`, `.tar`, `.tar.gz`/`.tgz`, `.tar.bz2`, `.tar.xz`, and single-file `.gz`,
+`.bz2`, `.xz`. Archives that try to write outside the destination folder are blocked.
+
+### Load from a database
+
 ```python
-Download_data.GoogleDrive.get_file_id(url : str)
+import os
+
+df = Load_data.Database.from_postgresql(
+    db_name="shop", table_name="orders",
+    username="analyst", password=os.environ["DB_PASSWORD"],
+    host="localhost", port=5432,
+)
+
+# Or your own SQL, with parameters
+df = Load_data.Database.from_mysql(
+    "shop", query="SELECT * FROM orders WHERE year = :y", params={"y": 2025},
+    username="analyst", password=os.environ["DB_PASSWORD"],
+)
+
+# Any SQLAlchemy URL
+df = Load_data.Database.from_url("sqlite:///local.db", "orders")
 ```
+
+Available: `from_postgresql`, `from_mysql`, `from_mariadb`, `from_mssql`, `from_azure_sql`,
+`from_oracle`, `from_amazon_rds` (`engine="mysql"` or `"postgresql"`), `from_sqlite`,
+`from_url`. Table names are looked up and quoted safely, so they can't inject SQL.
+
+---
+
+## Credentials
+
+**DataElevate never ships or stores anyone else's credentials.** Everything uses your own.
 
 ### Kaggle
 
-```python
-# Provide Kaggle dataset path and destination
-Download_data.Kaggle.from_kaggle(dataset="kaggle-dataset-URL", destination="path/to/save") #destination: Optional
-```
+Public datasets work without login. For private datasets, set `KAGGLE_USERNAME` and
+`KAGGLE_KEY`, or put your `kaggle.json` in `~/.kaggle/`
+([how to get it](https://www.kaggle.com/docs/api)).
 
-## 3. Load Data
+### Private Google Drive files
 
-### From Local  (CSV, Text, Excel)
+Public links ("Anyone with the link") need nothing. For private files:
 
-```python
-data = Load_data.from_local("path/to/your_file")
-```
-### From Kaggle
-
-```python
-data = Load_data.from_kaggle(url = "kaggle-dataset-URL")
-```
-
-### From Drive (Under Maintenance)
+1. `pip install "DataElevate[gdrive]"`
+2. In [Google Cloud Console](https://console.cloud.google.com/), enable the **Google Drive API**
+   and create an **OAuth client ID** of type **Desktop app**. Download the JSON.
+   (A **service account** key JSON also works; share the files with the service account.)
+3. Point DataElevate at it, either per call or once via an environment variable:
 
 ```python
-data = Load_data.from_drive(url = "dataset url from drive")
+path = Download_data.GoogleDrive.download_file(link, credentials="~/secrets/gdrive.json")
 ```
 
-### From Database (Under Maintenance)
-
-#### Supported Databases
-The following databases are supported:
-- PostgreSQL
-- MySQL
-- Microsoft SQL Server (MSSQL)
-- Oracle
-- SQLite
-- MariaDB
-- Amazon RDS
-- Azure SQL
-
-#### Usage Examples
-
-### Loading Data from PostgreSQL (Under Maintenance)
-To load data from a PostgreSQL database, use the `from_postgresql` method:
-```python
-data = Load_data.Database.from_postgresql(
-    db_name='your_database_name',
-    table_name='your_table_name',
-    username='your_username',
-    password='your_password',
-    host='your_host',
-    port='your_port'
-)
-```
-### Loading Data from SQLite (Under Maintenance)
-To load data from an SQLite database, use the sqlite method:
-
-```python
-data = Load_data.Database.sqlite(
-    db_name='your_database_name',
-    table_name='your_table_name'
-)
-```
-### Generalized Syntax for Other Databases (Under Maintenance)
-
-```python 
-data = Load_data.Database.DataBase_Type(
-    db_name='your_database_name',
-    table_name='your_table_name',
-    username='your_username',
-    password='your_password',
-    host='your_host',
-    port='your_port'
-)
-```
-### Example
-```python
-data = Load_data.Database.from_mysql(
-    db_name='your_database_name',
-    table_name='your_table_name',
-    username='your_username',
-    password='your_password',
-    host='your_host',
-    port='your_port'
-)
+```bash
+export DATAELEVATE_GDRIVE_CREDENTIALS=~/secrets/gdrive.json
 ```
 
-## 4. Extract Archives
+The first call opens a browser to sign in. Access is **read-only**. The sign-in token is
+cached in `~/.dataelevate/tokens/` (readable only by you); set `DATAELEVATE_HOME` to move it.
 
-```python
-Extractor.extract_archive("path/to/your_archive.zip", destination="path/to/extract") destination: Optional
-```
+Keep credential files outside your project folder and never commit them.
 
 ---
 
+## Errors
+
+All errors inherit from `DataElevateError`:
+
+| Error | When |
+|---|---|
+| `InvalidInput` | Bad URL/ID, inaccessible dataset, unsafe archive, missing table |
+| `Invalid_Directory` | File or archive not found |
+| `Invalid_File_Support` | Unsupported file type |
+| `MultipleFilesError` | Dataset has several data files; pass `file=` (lists them) |
+| `MissingDependencyError` | An optional extra isn't installed (tells you which) |
+| `CredentialsError` | Google credentials missing or invalid |
+
+---
 
 ## Contributing
 
-Contributions are welcome! Feel free to submit a pull request or raise issues for any bugs or feature requests.
+Issues and pull requests are welcome. To run the tests:
 
----
+```bash
+pip install -e ".[dev]"
+pytest
+```
+
+See [SECURITY.md](SECURITY.md) to report a security issue and [CHANGELOG.md](CHANGELOG.md)
+for release notes.
 
 ## License
 
-This project is licensed under the Apache License 2.0.
-See the LICENSE file for more details.
-
----
+MIT. See [LICENSE](LICENSE).
 
 ## Author
 
-**Name:** Moanl Bhiwgade 
-**Email:** 3051monal@gmail.com  
-**Version:** 1.0.0
+**Monal Bhiwgade**

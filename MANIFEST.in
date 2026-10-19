@@ -1,0 +1,5 @@
+include README.md LICENSE CHANGELOG.md SECURITY.md
+# Never ship local secrets, even if they exist in a working copy
+exclude DataElevate/env.py
+global-exclude .env .env.* *.json *.pem *.key token* credentials* client_secret* service_account*
+global-exclude __pycache__ *.py[cod]

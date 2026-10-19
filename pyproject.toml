@@ -1,0 +1,62 @@
+[build-system]
+requires = ["setuptools>=68", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "DataElevate"
+version = "1.1.0"
+description = "Get training data from Kaggle, Google Drive, archives and databases into pandas with a few lines of code."
+readme = "README.md"
+requires-python = ">=3.9"
+license = { text = "MIT" }
+authors = [{ name = "Monal Bhiwgade" }]
+keywords = ["dataset", "data loading", "kaggle", "google drive", "machine learning", "pandas", "download"]
+classifiers = [
+    "Programming Language :: Python :: 3",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: OS Independent",
+    "Intended Audience :: Developers",
+    "Intended Audience :: Science/Research",
+    "Topic :: Scientific/Engineering :: Artificial Intelligence",
+]
+# Core install: local files, Kaggle and public Google Drive links. All pure-Python wheels.
+dependencies = [
+    "pandas>=1.5",
+    "openpyxl>=3.1",
+    "tqdm>=4.60",
+    "gdown>=5.1",
+    "kagglehub>=0.3",
+]
+
+[project.optional-dependencies]
+# Private Google Drive files with your own credentials
+gdrive = [
+    "google-api-python-client>=2.100",
+    "google-auth>=2.20",
+    "google-auth-oauthlib>=1.0",
+]
+# PostgreSQL, MySQL/MariaDB, Oracle, SQLite
+db = [
+    "SQLAlchemy>=2.0",
+    "psycopg2-binary>=2.9",
+    "PyMySQL>=1.1",
+    "oracledb>=2.0",
+]
+# SQL Server / Azure SQL (also needs the Microsoft ODBC driver on your system)
+mssql = ["SQLAlchemy>=2.0", "pyodbc>=5.0"]
+all = ["DataElevate[gdrive,db,mssql]"]
+dev = ["pytest>=7", "SQLAlchemy>=2.0", "build", "twine"]
+
+[project.urls]
+Homepage = "https://github.com/Monal-Bhiwgade/DataElevate"
+Issues = "https://github.com/Monal-Bhiwgade/DataElevate/issues"
+Changelog = "https://github.com/Monal-Bhiwgade/DataElevate/blob/main/CHANGELOG.md"
+
+[tool.setuptools.packages.find]
+include = ["DataElevate*"]
+
+[tool.setuptools]
+include-package-data = false
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]
